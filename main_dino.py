@@ -120,6 +120,9 @@ def get_args_parser():
     parser.add_argument('--data_path', default='/path/to/imagenet/train/', type=str,
         help='Please specify path to the ImageNet training data.')
     parser.add_argument('--output_dir', default=".", type=str, help='Path to save logs and checkpoints.')
+    parser.add_argument('--timestamp_dir', default=True, type=bool,
+                        help='Create directory with name of time stamp inside logging/output folders.')
+    parser.add_argument('--no_timestamp_dir', action='store_false', dest='timestamp_dir')
     parser.add_argument('--saveckp_freq', default=20, type=int, help='Save checkpoint every x epochs.')
     parser.add_argument('--seed', default=0, type=int, help='Random seed.')
     parser.add_argument('--num_workers', default=10, type=int, help='Number of data loading workers per GPU.')
@@ -467,5 +470,10 @@ class DataAugmentationDINO(object):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('DINO', parents=[get_args_parser()])
     args = parser.parse_args()
+
+    if args.timestamp_dir:
+        timestamp = "dino_{0:%Y-%m-%d__%H-%M-%S/}".format(datetime.datetime.now())
+        args.output_dir = os.path.join(args.output_dir, timestamp)
+
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
     train_dino(args)
