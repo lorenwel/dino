@@ -27,6 +27,7 @@ import torch.nn as nn
 import torch.distributed as dist
 import torch.backends.cudnn as cudnn
 import torch.nn.functional as F
+from torch.utils.tensorboard import SummaryWriter
 from torchvision import datasets, transforms
 from torchvision import models as torchvision_models
 
@@ -138,6 +139,9 @@ def train_dino(args):
     print("git:\n  {}\n".format(utils.get_sha()))
     print("\n".join("%s: %s" % (k, str(v)) for k, v in sorted(dict(vars(args)).items())))
     cudnn.benchmark = True
+
+    os.makedirs(args.output_dir, exist_ok=True)
+    log_writer = SummaryWriter(log_dir=args.output_dir)
 
     # ============ preparing data ... ============
     transform = DataAugmentationDINO(
@@ -275,7 +279,7 @@ def train_dino(args):
         # ============ training one epoch of DINO ... ============
         train_stats = train_one_epoch(student, teacher, teacher_without_ddp, dino_loss,
             data_loader, optimizer, lr_schedule, wd_schedule, momentum_schedule,
-            epoch, fp16_scaler, args)
+            epoch, fp16_scaler, args, log_writer)
 
         # ============ writing logs ... ============
         save_dict = {
@@ -303,8 +307,10 @@ def train_dino(args):
 
 def train_one_epoch(student, teacher, teacher_without_ddp, dino_loss, data_loader,
                     optimizer, lr_schedule, wd_schedule, momentum_schedule,epoch,
-                    fp16_scaler, args):
+                    fp16_scaler, args, log_writer=None):
     metric_logger = utils.MetricLogger(delimiter="  ")
+    if log_writer is not None:
+        print('log_dir: {}'.format(log_writer.log_dir))
     header = 'Epoch: [{}/{}]'.format(epoch, args.epochs)
     for it, (images, _) in enumerate(metric_logger.log_every(data_loader, 10, header)):
         # update weight decay and learning rate according to their schedule
@@ -352,11 +358,23 @@ def train_one_epoch(student, teacher, teacher_without_ddp, dino_loss, data_loade
             for param_q, param_k in zip(student.module.parameters(), teacher_without_ddp.parameters()):
                 param_k.data.mul_(m).add_((1 - m) * param_q.detach().data)
 
+        lr = optimizer.param_groups[0]["lr"]
+        weight_decay = optimizer.param_groups[0]["weight_decay"]
+
         # logging
         torch.cuda.synchronize()
         metric_logger.update(loss=loss.item())
-        metric_logger.update(lr=optimizer.param_groups[0]["lr"])
-        metric_logger.update(wd=optimizer.param_groups[0]["weight_decay"])
+        metric_logger.update(lr=lr)
+        metric_logger.update(wd=weight_decay)
+
+        if log_writer is not None:
+            """ We use epoch_1000x as the x-axis in tensorboard.
+            This calibrates different curves when batch size changes.
+            """
+            epoch_1000x = int((it / len(data_loader) + epoch) * 1000)
+            log_writer.add_scalar('train_loss', loss.item(), epoch_1000x)
+            log_writer.add_scalar('lr', lr, epoch_1000x)
+            log_writer.add_scalar('weigth_decay', weight_decay, epoch_1000x)
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
     print("Averaged stats:", metric_logger)
