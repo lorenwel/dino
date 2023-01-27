@@ -141,7 +141,11 @@ def train_dino(args):
     cudnn.benchmark = True
 
     os.makedirs(args.output_dir, exist_ok=True)
-    log_writer = SummaryWriter(log_dir=args.output_dir)
+    # Only log on master.
+    if args.rank == 0:
+        log_writer = SummaryWriter(log_dir=args.output_dir)
+    else:
+        log_writer = None
 
     # ============ preparing data ... ============
     transform = DataAugmentationDINO(
@@ -371,7 +375,7 @@ def train_one_epoch(student, teacher, teacher_without_ddp, dino_loss, data_loade
             """ We use epoch_1000x as the x-axis in tensorboard.
             This calibrates different curves when batch size changes.
             """
-            epoch_1000x = int((it / len(data_loader) + epoch) * 1000)
+            epoch_1000x = int(it / len(data_loader) * 1000)
             log_writer.add_scalar('train_loss', loss.item(), epoch_1000x)
             log_writer.add_scalar('lr', lr, epoch_1000x)
             log_writer.add_scalar('weigth_decay', weight_decay, epoch_1000x)
