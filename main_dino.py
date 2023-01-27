@@ -121,6 +121,7 @@ def get_args_parser():
     parser.add_argument('--data_path', default='/path/to/imagenet/train/', type=str,
         help='Please specify path to the ImageNet training data.')
     parser.add_argument('--output_dir', default=".", type=str, help='Path to save logs and checkpoints.')
+    parser.add_argument('--resume', default=None, type=str, help='Checkpoint file to resume.')
     parser.add_argument('--timestamp_dir', default=True, type=bool,
                         help='Create directory with name of time stamp inside logging/output folders.')
     parser.add_argument('--no_timestamp_dir', action='store_false', dest='timestamp_dir')
@@ -264,8 +265,12 @@ def train_dino(args):
 
     # ============ optionally resume training ... ============
     to_restore = {"epoch": 0}
+    if args.resume is not None:
+        checkpoint_file = args.resume
+    else:
+        checkpoint_file = os.path.join(args.output_dir, "checkpoint.pth")
     utils.restart_from_checkpoint(
-        os.path.join(args.output_dir, "checkpoint.pth"),
+        checkpoint_file,
         run_variables=to_restore,
         student=student,
         teacher=teacher,
