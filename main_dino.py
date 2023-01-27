@@ -19,6 +19,7 @@ import time
 import math
 import json
 from pathlib import Path
+import wandb
 
 import numpy as np
 from PIL import Image
@@ -142,11 +143,6 @@ def train_dino(args):
     cudnn.benchmark = True
 
     os.makedirs(args.output_dir, exist_ok=True)
-    # Only log on master.
-    if args.rank == 0:
-        log_writer = SummaryWriter(log_dir=args.output_dir)
-    else:
-        log_writer = None
 
     # ============ preparing data ... ============
     transform = DataAugmentationDINO(
@@ -262,6 +258,21 @@ def train_dino(args):
     momentum_schedule = utils.cosine_scheduler(args.momentum_teacher, 1,
                                                args.epochs, len(data_loader))
     print(f"Loss, optimizer and schedulers ready.")
+
+        # Only log on master.
+    if args.rank == 0:
+        log_writer = SummaryWriter(log_dir=args.output_dir)
+        wandb.init(project='dino-training',
+                   config={
+                        'learning_rate': args.lr,
+                        'batch_size_per_gpu': args.batch_size_per_gpu,
+                        'batch_size': args.batch_size_per_gpu * utils.get_world_size(),
+                        'patch_size': args.patch_size,
+                        'architecture': args.arch,
+                        'num_workers': args.num_workers,
+                   })
+    else:
+        log_writer = None
 
     # ============ optionally resume training ... ============
     to_restore = {"epoch": 0}
@@ -384,6 +395,7 @@ def train_one_epoch(student, teacher, teacher_without_ddp, dino_loss, data_loade
             log_writer.add_scalar('train_loss', loss.item(), epoch_1000x)
             log_writer.add_scalar('lr', lr, epoch_1000x)
             log_writer.add_scalar('weigth_decay', weight_decay, epoch_1000x)
+            wandb.log({'train_loss': loss.item(), 'lr': lr, 'weight_decay': weight_decay, 'step': epoch_1000x})
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
     print("Averaged stats:", metric_logger)
