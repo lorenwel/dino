@@ -22,6 +22,7 @@ from io import BytesIO
 
 import skimage.io
 from skimage.measure import find_contours
+from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon
 import torch
@@ -177,6 +178,15 @@ if __name__ == '__main__':
     h_featmap = img.shape[-1] // args.patch_size
 
     attentions = model.get_last_selfattention(img.to(device))
+    tokens = model.get_intermediate_layers(img.to(device), n=2)
+    # Remove cls token and last layer output (which does not make sense for patch tokens).
+    tokens = tokens[0][:,1:]
+    pca = PCA(n_components=3)
+    tokens_pca = pca.fit_transform(tokens[0].cpu().numpy())
+    # Reshape to "image".
+    tokens_pca = tokens_pca.reshape(w_featmap, h_featmap, -1)
+    # Normalize for pretty colors.
+    tokens_pca = (tokens_pca - tokens_pca.min()) / (tokens_pca.max() - tokens_pca.min())
 
     nh = attentions.shape[1] # number of head
 
@@ -206,6 +216,10 @@ if __name__ == '__main__':
         fname = os.path.join(args.output_dir, "attn-head" + str(j) + ".png")
         plt.imsave(fname=fname, arr=attentions[j], format='png')
         print(f"{fname} saved.")
+
+    fname = os.path.join(args.output_dir, "pca.png")
+    plt.imsave(fname=fname, arr=tokens_pca, format='png')
+    print(f"{fname} saved.")
 
     if args.threshold is not None:
         image = skimage.io.imread(os.path.join(args.output_dir, "img.png"))
